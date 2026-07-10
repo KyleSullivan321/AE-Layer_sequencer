@@ -8,6 +8,3 @@ tools/
 
 # in-AE test report
 test/ae_result.txt
-
-# the starter-template repo this project was scaffolded from; it has its own git
-AE-Layer_sequencer/
