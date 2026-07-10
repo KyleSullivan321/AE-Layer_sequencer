@@ -1,0 +1,13 @@
+# Signed package + the certificate that signs it. Never commit the .p12.
+dist/
+*.p12
+.rnd
+
+# Adobe's ZXPSignCmd, downloaded on demand (see README > Build)
+tools/
+
+# in-AE test report
+test/ae_result.txt
+
+# the starter-template repo this project was scaffolded from; it has its own git
+AE-Layer_sequencer/

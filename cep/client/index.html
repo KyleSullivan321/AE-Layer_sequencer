@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Layer Sequencer</title>
+<style>
+  :root {
+    --bg: #232323; --panel: #2b2b2b; --line: #3c3c3c; --text: #d4d4d4;
+    --dim: #8a8a8a; --accent: #5ab8ff; --warm: #f2a640; --err: #ff6b6b; --ok: #7ec97e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 8px; background: var(--bg); color: var(--text);
+    font: 11px/1.4 "Segoe UI", -apple-system, sans-serif; user-select: none;
+  }
+  .row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+  .row > label { color: var(--dim); flex: 0 0 auto; }
+  .grow { flex: 1 1 auto; min-width: 0; }
+  select, input[type=number], input[type=text], button {
+    background: var(--panel); color: var(--text); border: 1px solid var(--line);
+    border-radius: 3px; padding: 3px 5px; font: inherit; outline: none;
+  }
+  select:focus, input:focus { border-color: var(--accent); }
+  input[type=number] { width: 52px; text-align: right; }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: #3a6ea5; border-color: #4a80b8; font-weight: 600; }
+  button.primary:hover { background: #4a80b8; }
+  button.icon { padding: 3px 7px; }
+  canvas { width: 100%; height: 230px; display: block; border: 1px solid var(--line);
+           border-radius: 3px; cursor: crosshair; touch-action: none; }
+  .quad { display: flex; gap: 4px; }
+  .quad input { flex: 1 1 0; width: auto; }
+  #offsets { font-family: Consolas, monospace; font-size: 10px; color: var(--dim);
+             background: var(--panel); border: 1px solid var(--line); border-radius: 3px;
+             padding: 4px 6px; margin: 6px 0; min-height: 20px; overflow-x: auto;
+             white-space: nowrap; user-select: text; }
+  #status { margin-top: 6px; min-height: 15px; color: var(--dim); }
+  #status.err { color: var(--err); }
+  #status.ok { color: var(--ok); }
+  #sel { color: var(--dim); font-size: 10px; }
+  hr { border: 0; border-top: 1px solid var(--line); margin: 8px 0; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div class="row">
+  <label>Sequence</label>
+  <select id="target" class="grow">
+    <option value="layers">Layers</option>
+    <option value="keyframes">Keyframes</option>
+  </select>
+  <span id="sel">&mdash;</span>
+</div>
+
+<div class="row hidden" id="groupRow">
+  <label>Group by</label>
+  <select id="group" class="grow">
+    <option value="layer">Layer</option>
+    <option value="property">Property</option>
+    <option value="keyframe">Keyframe</option>
+  </select>
+</div>
+
+<div class="row">
+  <label>Order</label>
+  <select id="order" class="grow">
+    <option value="topDown">Top to Bottom</option>
+    <option value="bottomUp">Bottom to Top</option>
+    <option value="byTime">By Start Time</option>
+    <option value="centerOut">Center Out</option>
+    <option value="edgesIn">Edges In</option>
+    <option value="random">Random</option>
+  </select>
+  <label><input type="checkbox" id="reverse"> Reverse</label>
+</div>
+
+<div class="row">
+  <label>Spacing</label>
+  <select id="spacing" class="grow">
+    <option value="step">Step (per item)</option>
+    <option value="total">Total span</option>
+  </select>
+  <input type="number" id="amount" value="4" step="1">
+  <span style="color:var(--dim)">fr</span>
+</div>
+
+<div class="row">
+  <label>Anchor</label>
+  <select id="anchor" class="grow">
+    <option value="first">First</option>
+    <option value="center">Center</option>
+    <option value="last">Last</option>
+  </select>
+</div>
+
+<hr>
+
+<div class="row">
+  <label>Curve</label>
+  <select id="preset" class="grow"></select>
+  <button class="icon" id="savePreset" title="Save current curve as a preset">+</button>
+  <button class="icon" id="delPreset" title="Delete selected custom preset">&minus;</button>
+</div>
+
+<div class="row hidden" id="saveRow">
+  <label>Name</label>
+  <input type="text" id="presetName" class="grow" placeholder="My Curve">
+  <button id="saveOk">Save</button>
+  <button id="saveCancel">Cancel</button>
+</div>
+
+<canvas id="cv"></canvas>
+
+<div class="row" style="margin-top:6px">
+  <div class="quad grow">
+    <input type="number" id="x1" step="0.01" title="x1">
+    <input type="number" id="y1" step="0.01" title="y1">
+    <input type="number" id="x2" step="0.01" title="x2">
+    <input type="number" id="y2" step="0.01" title="y2">
+  </div>
+</div>
+
+<hr>
+
+<div class="row">
+  <label>Jitter</label>
+  <input type="number" id="jitter" value="0" step="1" min="0">
+  <span style="color:var(--dim)">fr</span>
+  <label style="margin-left:6px">Seed</label>
+  <input type="number" id="seed" value="1" step="1" min="1">
+  <button class="icon" id="dice" title="Randomize seed">&#9860;</button>
+  <label style="margin-left:auto"><input type="checkbox" id="snap" checked> Snap</label>
+</div>
+
+<div id="offsets">&mdash;</div>
+
+<div class="row">
+  <button id="refresh" class="grow">Refresh</button>
+  <button id="apply" class="primary grow">Apply</button>
+</div>
+
+<div id="status">Select layers or keyframes, then Apply.</div>
+
+<script src="core.js"></script>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+// NOT `cep` — CEP injects a global by that name and `const cep` is a SyntaxError
+// that silently kills this whole script.
+const host = window.__adobe_cep__;
+const LS_KEY = "layerSequencer.v1";
+
+const state = {
+  curve: LSCore.PRESETS["Linear"].slice(),
+  n: 0, times: [], fps: 30, comp: "",
+  custom: {}                 // user-saved curves, name -> [x1,y1,x2,y2]
+};
+
+// ---------------------------------------------------------------- CEP bridge
+function evalES(script) {
+  return new Promise((resolve) => {
+    if (!host || !host.evalScript) return resolve("err|Not running inside After Effects");
+    host.evalScript(script, resolve);
+  });
+}
+function setStatus(msg, kind) {
+  const s = $("status");
+  s.textContent = msg;
+  s.className = kind || "";
+}
+
+// ---------------------------------------------------------------- settings
+function mode() {
+  return $("target").value === "layers" ? "layers" : $("group").value;
+}
+function opts(n) {
+  return {
+    spanFrames: LSCore.spanFromSpacing($("spacing").value, +$("amount").value || 0, n),
+    curve: state.curve,
+    order: $("order").value,
+    reverse: $("reverse").checked,
+    anchor: $("anchor").value,
+    jitterFrames: +$("jitter").value || 0,
+    seed: +$("seed").value || 1,
+    snap: $("snap").checked,
+    times: state.times
+  };
+}
+const PERSIST = ["target", "group", "order", "reverse", "spacing", "amount", "anchor", "jitter", "seed", "snap"];
+function save() {
+  const d = { curve: state.curve, custom: state.custom, preset: $("preset").value };
+  for (const id of PERSIST) {
+    const el = $(id);
+    d[id] = el.type === "checkbox" ? el.checked : el.value;
+  }
+  try { localStorage.setItem(LS_KEY, JSON.stringify(d)); } catch (e) {}
+}
+function load() {
+  let d;
+  try { d = JSON.parse(localStorage.getItem(LS_KEY) || "{}"); } catch (e) { d = {}; }
+  for (const id of PERSIST) {
+    if (d[id] === undefined) continue;
+    const el = $(id);
+    if (el.type === "checkbox") el.checked = d[id]; else el.value = d[id];
+  }
+  if (Array.isArray(d.curve) && d.curve.length === 4) state.curve = d.curve;
+  if (d.custom && typeof d.custom === "object") state.custom = d.custom;
+  fillPresets(d.preset);
+}
+
+// ---------------------------------------------------------------- presets
+function fillPresets(select) {
+  const sel = $("preset");
+  sel.innerHTML = "";
+  const add = (name) => sel.appendChild(new Option(name, name));
+  Object.keys(LSCore.PRESETS).forEach(add);
+  const customNames = Object.keys(state.custom);
+  if (customNames.length) customNames.forEach(add);
+  add("Custom");
+  sel.value = (select && [...sel.options].some((o) => o.value === select)) ? select : "Custom";
+  matchPreset();
+}
+function curveOf(name) {
+  return LSCore.PRESETS[name] || state.custom[name] || null;
+}
+/* Name the curve if it matches a preset, else fall back to "Custom". */
+function matchPreset() {
+  const all = Object.assign({}, LSCore.PRESETS, state.custom);
+  for (const name in all) {
+    if (all[name].every((v, i) => Math.abs(v - state.curve[i]) < 1e-4)) {
+      $("preset").value = name;
+      return;
+    }
+  }
+  $("preset").value = "Custom";
+}
+
+// ---------------------------------------------------------------- canvas
+const cv = $("cv"), ctx = cv.getContext("2d");
+const PAD = 20, STRIP = 42, YMIN = -0.6, YMAX = 1.6;
+let W = 0, H = 0, curveH = 0;
+
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  W = cv.clientWidth; H = cv.clientHeight; curveH = H - STRIP;
+  cv.width = W * dpr; cv.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  draw();
+}
+const toPx = (t, y) => [PAD + t * (W - 2 * PAD), PAD + (YMAX - y) / (YMAX - YMIN) * (curveH - 2 * PAD)];
+const toVal = (px, py) => [(px - PAD) / (W - 2 * PAD), YMAX - (py - PAD) / (curveH - 2 * PAD) * (YMAX - YMIN)];
+
+function previewCount() { return state.n >= 2 ? state.n : 8; }
+
+function draw() {
+  const c = state.curve;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = "#1e1e1e"; ctx.fillRect(0, 0, W, H);
+
+  // unit box + midlines
+  const a = toPx(0, 0), b = toPx(1, 1);
+  ctx.strokeStyle = "#3a3a3a"; ctx.lineWidth = 1;
+  ctx.strokeRect(a[0] + .5, b[1] + .5, b[0] - a[0], a[1] - b[1]);
+  ctx.setLineDash([2, 3]); ctx.strokeStyle = "#333";
+  const m = toPx(0.5, 0.5);
+  ctx.beginPath(); ctx.moveTo(a[0], m[1]); ctx.lineTo(b[0], m[1]); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(m[0], b[1]); ctx.lineTo(m[0], a[1]); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // handle arms
+  const h0 = toPx(0, 0), h1 = toPx(LSCore.clamp01(c[0]), c[1]);
+  const h3 = toPx(1, 1), h2 = toPx(LSCore.clamp01(c[2]), c[3]);
+  ctx.strokeStyle = "#6b5636";
+  ctx.beginPath(); ctx.moveTo(h0[0], h0[1]); ctx.lineTo(h1[0], h1[1]); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(h3[0], h3[1]); ctx.lineTo(h2[0], h2[1]); ctx.stroke();
+
+  // curve
+  ctx.strokeStyle = "#5ab8ff"; ctx.lineWidth = 2; ctx.beginPath();
+  for (let i = 0; i <= 100; i++) {
+    const u = i / 100;
+    const p = toPx(LSCore.bezAt(u, LSCore.clamp01(c[0]), LSCore.clamp01(c[2])), LSCore.bezAt(u, c[1], c[3]));
+    i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]);
+  }
+  ctx.stroke();
+
+  // item dots
+  const n = previewCount();
+  ctx.fillStyle = "rgba(255,255,255,.85)";
+  for (let i = 0; i < n; i++) {
+    const t = n > 1 ? i / (n - 1) : 0;
+    const p = toPx(t, LSCore.bezierYAtX(t, c[0], c[1], c[2], c[3]));
+    ctx.beginPath(); ctx.arc(p[0], p[1], 2.5, 0, 7); ctx.fill();
+  }
+
+  // handles
+  ctx.fillStyle = "#f2a640";
+  for (const h of [h1, h2]) { ctx.beginPath(); ctx.arc(h[0], h[1], 5, 0, 7); ctx.fill(); }
+
+  drawStrip(n);
+}
+
+/* The strip is the point of the whole panel: it shows where items actually land,
+ * so clumping is visible. Dots on the curve alone don't show it. */
+function drawStrip(n) {
+  const offs = LSCore.computeOffsets(n, opts(n));
+  const lo = Math.min(...offs), hi = Math.max(...offs), range = (hi - lo) || 1;
+  const y = H - STRIP / 2;
+
+  ctx.strokeStyle = "#3a3a3a"; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(PAD, y + .5); ctx.lineTo(W - PAD, y + .5); ctx.stroke();
+
+  ctx.strokeStyle = "#5ab8ff"; ctx.lineWidth = 2;
+  for (const o of offs) {
+    const x = PAD + (o - lo) / range * (W - 2 * PAD);
+    ctx.beginPath(); ctx.moveTo(x, y - 7); ctx.lineTo(x, y + 7); ctx.stroke();
+  }
+
+  ctx.fillStyle = "#8a8a8a"; ctx.font = "9px Consolas, monospace";
+  ctx.textAlign = "left";  ctx.fillText(lo + "f", PAD, y + 20);
+  ctx.textAlign = "right"; ctx.fillText(hi + "f", W - PAD, y + 20);
+  ctx.textAlign = "center";
+  ctx.fillText((state.n >= 2 ? state.n : n) + (state.n >= 2 ? " items" : " (preview)"), W / 2, y + 20);
+}
+
+function renderOffsets() {
+  const n = state.n;
+  if (n < 2) { $("offsets").textContent = "—"; return; }
+  const offs = LSCore.computeOffsets(n, opts(n));
+  const txt = offs.map((o) => (o > 0 ? "+" : "") + o).join("  ");
+  $("offsets").textContent = txt.length > 400 ? txt.slice(0, 400) + " …" : txt;
+}
+
+function render() { draw(); renderOffsets(); save(); }
+
+// ---------------------------------------------------------------- dragging
+let drag = -1;
+cv.addEventListener("pointerdown", (e) => {
+  const r = cv.getBoundingClientRect();
+  const x = e.clientX - r.left, y = e.clientY - r.top;
+  const h1 = toPx(LSCore.clamp01(state.curve[0]), state.curve[1]);
+  const h2 = toPx(LSCore.clamp01(state.curve[2]), state.curve[3]);
+  const d1 = Math.hypot(x - h1[0], y - h1[1]), d2 = Math.hypot(x - h2[0], y - h2[1]);
+  drag = (d1 < 12 && d1 <= d2) ? 0 : (d2 < 12 ? 1 : -1);
+  if (drag >= 0) cv.setPointerCapture(e.pointerId);
+});
+cv.addEventListener("pointermove", (e) => {
+  if (drag < 0) return;
+  const r = cv.getBoundingClientRect();
+  const [t, y] = toVal(e.clientX - r.left, e.clientY - r.top);
+  state.curve[drag * 2] = LSCore.clamp01(t);
+  state.curve[drag * 2 + 1] = Math.max(YMIN, Math.min(YMAX, y));
+  syncFields(); matchPreset(); render();
+});
+const endDrag = (e) => {
+  if (drag < 0) return;
+  drag = -1;
+  try { cv.releasePointerCapture(e.pointerId); } catch (_) {}
+};
+cv.addEventListener("pointerup", endDrag);
+cv.addEventListener("pointercancel", endDrag);
+
+// ---------------------------------------------------------------- fields
+const FIELDS = ["x1", "y1", "x2", "y2"];
+function syncFields() { FIELDS.forEach((id, i) => ($(id).value = state.curve[i].toFixed(3))); }
+FIELDS.forEach((id, i) => {
+  $(id).addEventListener("change", () => {
+    const v = parseFloat($(id).value);
+    if (isNaN(v)) { syncFields(); return; }
+    state.curve[i] = (i % 2 === 0) ? LSCore.clamp01(v) : Math.max(YMIN, Math.min(YMAX, v));
+    syncFields(); matchPreset(); render();
+  });
+});
+
+$("preset").addEventListener("change", () => {
+  const c = curveOf($("preset").value);
+  if (!c) return;                       // "Custom" is a label, not a curve
+  state.curve = c.slice();
+  syncFields(); render();
+});
+// CEP's CEF build doesn't reliably show window.prompt(), so name presets inline.
+function showSaveRow(show) {
+  $("saveRow").classList.toggle("hidden", !show);
+  if (show) { $("presetName").value = ""; $("presetName").focus(); }
+}
+$("savePreset").addEventListener("click", () => showSaveRow(true));
+$("saveCancel").addEventListener("click", () => showSaveRow(false));
+$("saveOk").addEventListener("click", commitPreset);
+function commitPreset() {
+  const name = $("presetName").value.trim();
+  if (!name) { setStatus("Give the preset a name.", "err"); return; }
+  if (LSCore.PRESETS[name]) { setStatus(`"${name}" is a built-in preset name.`, "err"); return; }
+  state.custom[name] = state.curve.slice();
+  fillPresets(name);
+  save();
+  showSaveRow(false);
+  setStatus(`Saved "${name}".`, "ok");
+}
+$("delPreset").addEventListener("click", () => {
+  const name = $("preset").value;
+  if (!state.custom[name]) { setStatus("Only custom presets can be deleted.", "err"); return; }
+  delete state.custom[name];
+  fillPresets("Custom");
+  save();
+  setStatus(`Deleted "${name}".`);
+});
+
+$("target").addEventListener("change", () => {
+  $("groupRow").classList.toggle("hidden", $("target").value !== "keyframes");
+  refresh();
+});
+$("group").addEventListener("change", () => refresh());
+["order", "reverse", "spacing", "amount", "anchor", "jitter", "seed", "snap"]
+  .forEach((id) => $(id).addEventListener("change", render));
+$("dice").addEventListener("click", () => {
+  $("seed").value = 1 + Math.floor(Math.random() * 9999);
+  render();
+});
+
+// ---------------------------------------------------------------- actions
+/* quiet: re-read the selection without stomping a message the user needs to see
+ * (apply's result would otherwise be overwritten by the comp/fps line). */
+async function refresh(quiet) {
+  const res = await evalES(`LS_query("${mode()}")`);
+  const parts = String(res).split("|");
+  if (parts[0] !== "ok") {
+    state.n = 0; state.times = [];
+    $("sel").textContent = "—";
+    setStatus(parts.slice(1).join("|") || "Query failed", "err");
+    render();
+    return;
+  }
+  state.n = +parts[1];
+  state.fps = +parts[2];
+  state.times = parts[3] ? parts[3].split(",").map(Number) : [];
+  state.comp = parts.slice(4).join("|");
+  $("sel").textContent = `${state.n} item${state.n === 1 ? "" : "s"}`;
+  if (!quiet) {
+    setStatus(state.n >= 2
+      ? `${state.comp} @ ${state.fps}fps`
+      : (state.n === 1 ? "Need at least 2 items." : "Nothing selected for this mode."));
+  }
+  render();
+}
+
+async function apply() {
+  if (state.n < 2) { setStatus("Need at least 2 items. Hit Refresh.", "err"); return; }
+  const offs = LSCore.computeOffsets(state.n, opts(state.n));
+  const res = await evalES(`LS_apply("${mode()}","${offs.join(",")}")`);
+  const parts = String(res).split("|");
+  if (parts[0] !== "ok") { setStatus(parts.slice(1).join("|") || "Apply failed", "err"); return; }
+
+  const [, applied, locked, merged] = parts;
+  const span = Math.max(...offs) - Math.min(...offs);
+  let msg = `Sequenced ${applied} items across ${span} frames.`;
+  if (+locked) msg += ` ${locked} locked layer(s) skipped.`;
+  if (+merged) msg += ` ${merged} keyframe(s) collided and merged.`;
+  await refresh(true);          // re-read positions; keep the result message
+  setStatus(msg, +merged ? "err" : "ok");
+}
+
+$("refresh").addEventListener("click", () => refresh());
+$("apply").addEventListener("click", apply);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("saveRow").classList.contains("hidden")) { showSaveRow(false); return; }
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  if (e.target === $("presetName")) commitPreset(); else apply();
+});
+// AE selection can change while the panel is unfocused; re-read on return.
+// Wrapped: a bare listener would pass the Event as `quiet`.
+window.addEventListener("focus", () => refresh());
+window.addEventListener("resize", resize);
+
+// ---------------------------------------------------------------- boot
+load();
+$("groupRow").classList.toggle("hidden", $("target").value !== "keyframes");
+syncFields();
+resize();
+refresh();
+</script>
+</body>
+</html>
