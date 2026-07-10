@@ -109,6 +109,26 @@ const setCtl = (id, v) => evaluate(`(()=>{const e=document.getElementById(${JSON
     assert.ok(offs[i] - offs[i - 1] >= offs[i - 1] - offs[i - 2], `ease-in gaps must widen: ${offs}`);
   }
 
+  // --- realign: collapse the stagger back to comp start ---
+  // Reads AE positions straight from the host (the offsets row shows the prospective
+  // stagger, not current times, so it can't confirm a flatten).
+  const hostTimes = async () => {
+    const res = await evaluate(
+      `new Promise(r => window.__adobe_cep__.evalScript('LS_query("layers")', r))`);
+    return String(res).split("|")[4];   // ok|count|fps|playhead|times|comp
+  };
+
+  await setCtl("target", "layers");
+  await setCtl("alignTarget", "start");
+  await click("refresh");
+  await sleep(900);
+  assert.notStrictEqual(await hostTimes(), "0,0,0,0,0", "layers should still be staggered before realign");
+
+  await click("align");
+  await sleep(1500);
+  assert.match(await text("status"), /^Realigned 5 items to comp start\./, `realign status: ${await text("status")}`);
+  assert.strictEqual(await hostTimes(), "0,0,0,0,0", "every layer should start at 0 after realign to comp start");
+
   assert.deepStrictEqual(exceptions, [], "panel threw during interaction");
   ws.close();
   console.log("e2e: all assertions passed");

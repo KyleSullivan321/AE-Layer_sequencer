@@ -27,7 +27,7 @@
   button.primary { background: #3a6ea5; border-color: #4a80b8; font-weight: 600; }
   button.primary:hover { background: #4a80b8; }
   button.icon { padding: 3px 7px; }
-  canvas { width: 100%; height: 230px; display: block; border: 1px solid var(--line);
+  canvas { width: 100%; height: 360px; display: block; border: 1px solid var(--line);
            border-radius: 3px; cursor: crosshair; touch-action: none; }
   .quad { display: flex; gap: 4px; }
   .quad input { flex: 1 1 0; width: auto; }
@@ -141,6 +141,15 @@
   <button id="apply" class="primary grow">Apply</button>
 </div>
 
+<div class="row">
+  <label>Realign to</label>
+  <select id="alignTarget" class="grow">
+    <option value="start">Comp Start</option>
+    <option value="playhead">Playhead</option>
+  </select>
+  <button id="align" class="grow" title="Collapse the stagger: move every selected item to one time so you can start over">Realign</button>
+</div>
+
 <div id="status">Select layers or keyframes, then Apply.</div>
 
 <script src="core.js"></script>
@@ -154,7 +163,7 @@ const LS_KEY = "layerSequencer.v1";
 
 const state = {
   curve: LSCore.PRESETS["Linear"].slice(),
-  n: 0, times: [], fps: 30, comp: "",
+  n: 0, times: [], fps: 30, comp: "", playhead: 0,
   custom: {}                 // user-saved curves, name -> [x1,y1,x2,y2]
 };
 
@@ -188,7 +197,7 @@ function opts(n) {
     times: state.times
   };
 }
-const PERSIST = ["target", "group", "order", "reverse", "spacing", "amount", "anchor", "jitter", "seed", "snap"];
+const PERSIST = ["target", "group", "order", "reverse", "spacing", "amount", "anchor", "jitter", "seed", "snap", "alignTarget"];
 function save() {
   const d = { curve: state.curve, custom: state.custom, preset: $("preset").value };
   for (const id of PERSIST) {
@@ -239,7 +248,7 @@ function matchPreset() {
 
 // ---------------------------------------------------------------- canvas
 const cv = $("cv"), ctx = cv.getContext("2d");
-const PAD = 20, STRIP = 42, YMIN = -0.6, YMAX = 1.6;
+const PAD = 20, VPAD = 10, STRIP = 42, YMIN = -0.3, YMAX = 1.3;
 let W = 0, H = 0, curveH = 0;
 
 function resize() {
@@ -249,8 +258,8 @@ function resize() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   draw();
 }
-const toPx = (t, y) => [PAD + t * (W - 2 * PAD), PAD + (YMAX - y) / (YMAX - YMIN) * (curveH - 2 * PAD)];
-const toVal = (px, py) => [(px - PAD) / (W - 2 * PAD), YMAX - (py - PAD) / (curveH - 2 * PAD) * (YMAX - YMIN)];
+const toPx = (t, y) => [PAD + t * (W - 2 * PAD), VPAD + (YMAX - y) / (YMAX - YMIN) * (curveH - 2 * VPAD)];
+const toVal = (px, py) => [(px - PAD) / (W - 2 * PAD), YMAX - (py - VPAD) / (curveH - 2 * VPAD) * (YMAX - YMIN)];
 
 function previewCount() { return state.n >= 2 ? state.n : 8; }
 
@@ -433,8 +442,9 @@ async function refresh(quiet) {
   }
   state.n = +parts[1];
   state.fps = +parts[2];
-  state.times = parts[3] ? parts[3].split(",").map(Number) : [];
-  state.comp = parts.slice(4).join("|");
+  state.playhead = +parts[3];
+  state.times = parts[4] ? parts[4].split(",").map(Number) : [];
+  state.comp = parts.slice(5).join("|");
   $("sel").textContent = `${state.n} item${state.n === 1 ? "" : "s"}`;
   if (!quiet) {
     setStatus(state.n >= 2
@@ -444,24 +454,43 @@ async function refresh(quiet) {
   render();
 }
 
+/* Both Apply and Realign are just "send these frame offsets to the host." baseMsg
+ * receives the applied count and returns the headline; extras (locked/merged) are
+ * appended here. refresh(true) re-reads positions without stomping the message. */
+async function sendOffsets(offs, baseMsg) {
+  const res = await evalES(`LS_apply("${mode()}","${offs.join(",")}")`);
+  const parts = String(res).split("|");
+  if (parts[0] !== "ok") { setStatus(parts.slice(1).join("|") || "Failed", "err"); return; }
+
+  const [, applied, locked, merged] = parts;
+  let msg = baseMsg(applied);
+  if (+locked) msg += ` ${locked} locked layer(s) skipped.`;
+  if (+merged) msg += ` ${merged} keyframe(s) collided and merged.`;
+  await refresh(true);
+  setStatus(msg, +merged ? "err" : "ok");
+}
+
 async function apply() {
   if (state.n < 2) { setStatus("Need at least 2 items. Hit Refresh.", "err"); return; }
   const offs = LSCore.computeOffsets(state.n, opts(state.n));
-  const res = await evalES(`LS_apply("${mode()}","${offs.join(",")}")`);
-  const parts = String(res).split("|");
-  if (parts[0] !== "ok") { setStatus(parts.slice(1).join("|") || "Apply failed", "err"); return; }
-
-  const [, applied, locked, merged] = parts;
   const span = Math.max(...offs) - Math.min(...offs);
-  let msg = `Sequenced ${applied} items across ${span} frames.`;
-  if (+locked) msg += ` ${locked} locked layer(s) skipped.`;
-  if (+merged) msg += ` ${merged} keyframe(s) collided and merged.`;
-  await refresh(true);          // re-read positions; keep the result message
-  setStatus(msg, +merged ? "err" : "ok");
+  await sendOffsets(offs, (n) => `Sequenced ${n} items across ${span} frames.`);
+}
+
+/* Collapse the stagger: move every item to a single time so you can re-sequence.
+ * The offset that lands item i on the target is simply target - its current time. */
+async function align() {
+  if (state.n < 2) { setStatus("Need at least 2 items. Hit Refresh.", "err"); return; }
+  const toPlayhead = $("alignTarget").value === "playhead";
+  const target = toPlayhead ? state.playhead : 0;
+  const offs = state.times.map((t) => target - t);
+  await sendOffsets(offs, (n) => `Realigned ${n} items to ${toPlayhead ? "playhead" : "comp start"}.`);
 }
 
 $("refresh").addEventListener("click", () => refresh());
 $("apply").addEventListener("click", apply);
+$("align").addEventListener("click", align);
+$("alignTarget").addEventListener("change", save);
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !$("saveRow").classList.contains("hidden")) { showSaveRow(false); return; }
   if (e.key !== "Enter") return;

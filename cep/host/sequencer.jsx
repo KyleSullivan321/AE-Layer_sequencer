@@ -175,7 +175,8 @@ function LS_activeComp() {
     return (it && it instanceof CompItem) ? it : null;
 }
 
-/* -> "ok|<count>|<fps>|<t0,t1,...>|<compName>"  or  "err|<message>" */
+/* -> "ok|<count>|<fps>|<playheadFrame>|<t0,t1,...>|<compName>"  or  "err|<message>"
+ * compName stays last: it's the only field that can legally contain a pipe. */
 function LS_query(mode) {
     try {
         var comp = LS_activeComp();
@@ -185,7 +186,9 @@ function LS_query(mode) {
         for (i = 0; i < items.length; i++) {
             times.push(itemTimeFrames(comp, items[i], mode === "layers"));
         }
-        return "ok|" + items.length + "|" + comp.frameRate + "|" + times.join(",") + "|" + comp.name;
+        var playhead = Math.round(comp.time / comp.frameDuration);
+        return "ok|" + items.length + "|" + comp.frameRate + "|" + playhead + "|" +
+               times.join(",") + "|" + comp.name;
     } catch (e) {
         return "err|" + e.toString();
     }

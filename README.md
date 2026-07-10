@@ -43,10 +43,17 @@ Select layers (or keyframes), set a spacing, shape the curve, hit **Apply** (or 
 | **Curve** | Maps sequence position to offset. Linear reproduces a normal stagger. `+` saves the current curve as a named preset; `−` deletes it. |
 | **Jitter / Seed** | Randomly nudge each offset by up to ±N frames, reproducibly. The die re-rolls the seed. |
 | **Snap** | Round offsets to whole frames. On by default. |
+| **Realign to** | Starting over: collapse the current stagger so every selected item shares one time — the comp start or the playhead — then re-sequence from there. |
 
 The curve's x axis is sequence position, y is offset. Drag the two orange handles, or type the
 four numbers (same convention as CSS `cubic-bezier`). y is allowed past 0 and 1, which is what
 `Anticipate` and `Overshoot` use — items back up before moving forward.
+
+**Realign** is the reset. After a few Applies (or hand edits) you rarely want to reverse each one —
+you want a clean baseline. It moves every selected layer's `startTime` (or, for keyframes, each
+item's earliest selected key) onto the target, so the stagger flattens and you can start fresh.
+It's a single undo step like Apply, and reuses the same guard: if the selection changed since the
+last Refresh, it refuses rather than moving the wrong things.
 
 The strip under the curve previews where each item actually lands, and the row below it lists the
 exact frame offsets. Clumping is the thing you tune for, and dots on a curve don't show it.

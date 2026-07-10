@@ -74,8 +74,9 @@ try {
         ok("query: ok status", q[0] === "ok", q.join("|"));
         ok("query: 5 items", q[1] === "5", q[1]);
         ok("query: 30 fps", q[2] === "30", q[2]);
-        ok("query: times all 0", q[3] === "0,0,0,0,0", q[3]);
-        ok("query: comp name last", q[4] === "__LS_TEST__", q[4]);
+        ok("query: playhead frame", q[3] === "0", q[3]);
+        ok("query: times all 0", q[4] === "0,0,0,0,0", q[4]);
+        ok("query: comp name last", q[5] === "__LS_TEST__", q[5]);
 
         var r = LS_apply("layers", "0,6,12,18,24").split("|");
         ok("apply: ok status", r[0] === "ok", r.join("|"));
@@ -90,8 +91,34 @@ try {
         ok("apply: startTimes 0,6,12,18,24", good, got.join(","));
 
         // times now reflect the new positions, which is what "By Start Time" orders on
-        ok("query: times reflect moves", LS_query("layers").split("|")[3] === "0,6,12,18,24",
-           LS_query("layers").split("|")[3]);
+        ok("query: times reflect moves", LS_query("layers").split("|")[4] === "0,6,12,18,24",
+           LS_query("layers").split("|")[4]);
+
+        // Realign is panel-side: offset[i] = target - times[i], fed to LS_apply.
+        // Collapse the 0,6,12,18,24 stagger back to comp start.
+        var toStart = [];
+        for (i = 0; i < 5; i++) toStart.push(0 - (i * 6));   // -0,-6,-12,-18,-24
+        LS_apply("layers", toStart.join(","));
+        var allZero = true;
+        for (i = 1; i <= 5; i++) if (!near(comp.layer(i).startTime, 0)) allZero = false;
+        ok("realign: all layers collapse to comp start", allZero,
+           LS_query("layers").split("|")[4]);
+
+        // ...and to an arbitrary target (playhead frame 12): every layer lands on 12.
+        LS_apply("layers", "12,12,12,12,12");
+        var allTwelve = true;
+        for (i = 1; i <= 5; i++) if (!near(comp.layer(i).startTime, 12 * fd(comp))) allTwelve = false;
+        ok("realign: all layers move to target frame 12", allTwelve,
+           LS_query("layers").split("|")[4]);
+    })();
+
+    // ---- 1b. playhead is reported in frames ----
+    (function () {
+        var comp = makeComp(2); made.push(comp);
+        selectAll(comp);
+        comp.time = 15 * fd(comp);       // move the CTI to frame 15
+        var q = LS_query("layers").split("|");
+        ok("query: playhead reflects comp.time", q[3] === "15", q[3]);
     })();
 
     // ---- 2. host rejects a stale offset list instead of half-applying it ----
@@ -239,7 +266,7 @@ try {
 
         var q = LS_query("keyframe").split("|");
         ok("perKey: 3 items", q[1] === "3", q.join("|"));
-        ok("perKey: times are the key times in frames", q[3] === "0,30,60", q[3]);
+        ok("perKey: times are the key times in frames", q[4] === "0,30,60", q[4]);
 
         var r = LS_apply("keyframe", "0,3,6").split("|");
         ok("perKey: apply ok", r[0] === "ok", r.join("|"));
