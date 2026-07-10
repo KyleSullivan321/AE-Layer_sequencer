@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ExtensionManifest Version="7.0"
     ExtensionBundleId="com.kylesullivan.layersequencer"
-    ExtensionBundleVersion="1.0.0"
+    ExtensionBundleVersion="1.1.0"
     ExtensionBundleName="Layer Sequencer"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <ExtensionList>
-    <Extension Id="com.kylesullivan.layersequencer.panel" Version="1.0.0"/>
+    <Extension Id="com.kylesullivan.layersequencer.panel" Version="1.1.0"/>
   </ExtensionList>
   <ExecutionEnvironment>
     <HostList>
