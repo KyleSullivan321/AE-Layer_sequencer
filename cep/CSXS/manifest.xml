@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ExtensionManifest Version="7.0"
     ExtensionBundleId="com.kylesullivan.layersequencer"
-    ExtensionBundleVersion="1.1.0"
+    ExtensionBundleVersion="1.1.1"
     ExtensionBundleName="Layer Sequencer"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <ExtensionList>
-    <Extension Id="com.kylesullivan.layersequencer.panel" Version="1.1.0"/>
+    <Extension Id="com.kylesullivan.layersequencer.panel" Version="1.1.1"/>
   </ExtensionList>
   <ExecutionEnvironment>
     <HostList>
@@ -22,6 +22,14 @@
         <Resources>
           <MainPath>./client/index.html</MainPath>
           <ScriptPath>./host/sequencer.jsx</ScriptPath>
+          <!-- CEF's GPU compositor renders CEP panels as a black rectangle on some
+               macOS machines (notably Apple Silicon). Software rendering is the
+               standard workaround and costs nothing here: this panel is one small
+               2D canvas, not a game. -->
+          <CEFCommandLine>
+            <Parameter>--disable-gpu</Parameter>
+            <Parameter>--disable-gpu-compositing</Parameter>
+          </CEFCommandLine>
         </Resources>
         <Lifecycle><AutoVisible>true</AutoVisible></Lifecycle>
         <UI>
