@@ -15,7 +15,11 @@
 [CmdletBinding()]
 param(
     [string]$CertPath = "",
-    [string]$Tsa      = "http://timestamp.digicert.com"
+    [string]$Tsa      = "http://timestamp.digicert.com",
+    # Bundle .debug so the panel can be inspected with remote devtools. TEST BUILDS
+    # ONLY -- it opens a localhost port in the user's After Effects. Output is named
+    # -debug.zxp so it can't be mistaken for a release.
+    [switch]$IncludeDebug
 )
 
 $ErrorActionPreference = "Stop"
@@ -56,6 +60,11 @@ foreach ($dir in @("CSXS", "client", "host")) {
 Get-ChildItem $Stage -Recurse -Force -Include ".debug", "*.log", ".DS_Store" |
     ForEach-Object { Write-Host "  excluding $($_.Name)"; Remove-Item $_.FullName -Force }
 
+if ($IncludeDebug) {
+    Copy-Item (Join-Path $Src ".debug") $Stage -Force
+    Write-Warning "TEST BUILD: bundling .debug (remote devtools port). Do not ship this file."
+}
+
 Write-Host "Staged files:"
 Get-ChildItem $Stage -Recurse -File | ForEach-Object {
     Write-Host ("  " + $_.FullName.Substring($Stage.Length + 1))
@@ -67,7 +76,8 @@ if (-not (Test-Path $CertPath)) {
     if ($LASTEXITCODE -ne 0) { throw "certificate generation failed ($LASTEXITCODE)" }
 }
 
-$zxp = Join-Path $Dist "Layer-Sequencer-$version.zxp"
+$suffix = if ($IncludeDebug) { "-debug" } else { "" }
+$zxp = Join-Path $Dist "Layer-Sequencer-$version$suffix.zxp"
 if (Test-Path $zxp) { Remove-Item $zxp -Force }
 
 Write-Host "Signing -> $zxp"

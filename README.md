@@ -118,8 +118,16 @@ First run generates `dist/selfsigned.p12`. The password comes from `$env:ZXP_CER
 back to a default in the script. `dist/`, `tools/`, and `*.p12` are gitignored — don't commit the
 certificate. The script reads the version from `manifest.xml` and excludes `.debug` from the package.
 
+`.\build-zxp.ps1 -IncludeDebug` bundles `.debug` and names the output `-debug.zxp`. That opens a
+remote devtools port inside After Effects, so it's for diagnosing a specific machine — never ship it.
+
 ## Things that cost real time
 
+- **A black panel on macOS is not a JavaScript bug.** Every control here is static HTML, so even a
+  script that dies on line one still paints a panel full of widgets. An entirely black window means
+  CEF never rendered the page — on some Macs (notably Apple Silicon) the GPU compositor does exactly
+  that. Fix is `<CEFCommandLine>` with `--disable-gpu` and `--disable-gpu-compositing` in the
+  manifest. Costs nothing: this panel is one small 2D canvas.
 - **`const cep = ...` is a SyntaxError.** CEP injects a global named `cep`. The redeclaration kills
   the entire inline script, so the panel renders perfectly and every button does nothing, with no
   visible error. This is why `e2e_panel.js` exists.
